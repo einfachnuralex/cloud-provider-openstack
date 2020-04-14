@@ -1,0 +1,119 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: csi-cinder-controller-service
+  namespace: kube-system
+  labels:
+    app: csi-cinder-controllerplugin
+spec:
+  selector:
+    app: csi-cinder-controllerplugin
+  ports:
+    - name: dummy
+      port: 12345
+
+---
+kind: StatefulSet
+apiVersion: apps/v1
+metadata:
+  name: csi-cinder-controllerplugin
+  namespace: kube-system
+spec:
+  serviceName: "csi-cinder-controller-service"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: csi-cinder-controllerplugin
+  template:
+    metadata:
+      labels:
+        app: csi-cinder-controllerplugin
+    spec:
+      serviceAccount: csi-cinder-controller-sa
+      tolerations:
+      - key: node.cloudprovider.kubernetes.io/uninitialized
+        value: "true"
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/master
+        effect: NoSchedule
+      - effect: NoSchedule
+        key: node.kubernetes.io/not-ready
+      containers:
+        - name: csi-attacher
+          image: quay.io/k8scsi/csi-attacher:v1.0.1
+          args:
+            - "--v=5"
+            - "--csi-address=$(ADDRESS)"
+          env:
+            - name: ADDRESS
+              value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          imagePullPolicy: "IfNotPresent"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+        - name: csi-provisioner
+          image: quay.io/k8scsi/csi-provisioner:v1.0.1
+          args:
+            - "--provisioner=csi-cinderplugin"
+            - "--csi-address=$(ADDRESS)"
+          env:
+            - name: ADDRESS
+              value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          imagePullPolicy: "IfNotPresent"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+        - name: csi-snapshotter
+          image: quay.io/k8scsi/csi-snapshotter:v1.0.1
+          args:
+            - "--connection-timeout=15s"
+            - "--csi-address=$(ADDRESS)"
+          env:
+            - name: ADDRESS
+              value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          imagePullPolicy: Always
+          volumeMounts:
+            - mountPath: /var/lib/csi/sockets/pluginproxy/
+              name: socket-dir
+        - name: cinder-csi-plugin
+          image: k8scloudprovider/cinder-csi-plugin:v1.17.0
+          args :
+            - /bin/cinder-csi-plugin
+            - "--v=5"
+            - "--nodeid=$(NODE_ID)"
+            - "--endpoint=$(CSI_ENDPOINT)"
+            - "--cloud-config=$(CLOUD_CONFIG)"
+            - "--cluster=$(CLUSTER_NAME)"
+          env:
+            - name: NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: CSI_ENDPOINT
+              value: unix://csi/csi.sock
+            - name: CLOUD_CONFIG
+              value: /etc/config/cloud.conf
+            - name: CLUSTER_NAME
+              value: test1
+          imagePullPolicy: "IfNotPresent"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+            - name: secret-cinderplugin
+              mountPath: /etc/config
+              readOnly: true
+            - mountPath: /etc/kubernetes
+              name: ca-cert
+              readOnly: true
+      volumes:
+        - name: socket-dir
+          hostPath:
+            path: /var/lib/csi/sockets/pluginproxy/
+            type: DirectoryOrCreate
+        - name: secret-cinderplugin
+          secret:
+            secretName: cloud-config
+        - name: ca-cert
+          secret:
+            secretName: openstack-ca-cert
+
