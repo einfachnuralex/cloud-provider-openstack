@@ -32,6 +32,11 @@ Create secret from file
 kubectl create secret -n kube-system generic cloud-config --from-literal=cloud.conf="$(cat /etc/kubernetes/cloud-config)"
 ```
 
+Replace Cluster name
+```
+grep -rl test1 * | xargs sed -i 's/test1/CLUSTER_NAME/g'
+```
+
 Add Openstack cloud controller
 ```
 kubectl apply -f ./cloud-provider-openstack/
