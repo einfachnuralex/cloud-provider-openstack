@@ -29,7 +29,7 @@ kubeadm init --config=kubeadm-config.yaml
 
 Create secret from file
 ```
-kubectl create secret -n kube-system generic cloud-config --from-literal=cloud.conf="$(cat /etc/kubernetes/cloud-config)"
+kubectl create secret -n kube-system generic cloud-config --from-literal=cloud.conf="$(cat cloud-config)"
 ```
 
 Replace Cluster name
